@@ -180,6 +180,8 @@
     let dictionnairePret = false;
     let erreurDictionnaire = false;
     let dernierSuppr = 0;
+    let resultatsActuels = [];
+    let indexActuel = 0;
 
     function echapperHTML(texte) {
       return texte.replace(/[&<>"']/g, caractere => {
@@ -202,8 +204,8 @@
     async function chargerDictionnaire() {
       try {
         // Le "./" est important pour GitHub Pages :
-        // il charge fr.txt dans le même dossier que index.html.
-        const response = await fetch("./fr.txt", {
+        // il charge wordbomb_russe_filtre.txt dans le même dossier que index.html.
+        const response = await fetch("./wordbomb_russe_filtre.txt", {
           cache: "force-cache"
         });
 
@@ -222,7 +224,7 @@
         // priorité aux mots les plus courts.
         mots.sort((a, b) => {
           const difference = a.length - b.length;
-          return difference !== 0 ? difference : a.localeCompare(b, "fr");
+          return difference !== 0 ? difference : a.localeCompare(b, "ru");
         });
 
         dictionnairePret = true;
@@ -240,7 +242,7 @@
 
         console.error("Erreur chargement dictionnaire :", error);
 
-        status.textContent = "Erreur de chargement de fr.txt";
+        status.textContent = "Erreur de chargement de wordbomb_russe_filtre.txt";
         status.className = "error";
 
         afficherMessage("Erreur dictionnaire");
@@ -320,7 +322,23 @@
       resultat.innerHTML = html;
     }
 
+    function afficherResultatActuel() {
+      if (!resultatsActuels.length) {
+        afficherMessage("Aucun mot");
+        return;
+      }
+      const recherche = input.value.trim().toLowerCase();
+      const entree = resultatsActuels[indexActuel];
+      if (!recherche.includes(" ")) {
+        afficherMotSimple(entree.mot, recherche);
+      } else {
+        afficherMotAvecMorceaux(entree.mot, entree.positions);
+      }
+    }
+
     function chercherMot() {
+      resultatsActuels = [];
+      indexActuel = 0;
       const recherche = input.value
         .trim()
         .toLowerCase();
@@ -336,50 +354,43 @@
       }
 
       // Très important :
-      // on ne dit plus "Aucun mot" tant que fr.txt n'est pas chargé.
+      // on ne dit plus "Aucun mot" tant que wordbomb_russe_filtre.txt n'est pas chargé.
       if (!dictionnairePret) {
         afficherMessage("Chargement…");
         return;
       }
 
-      // Une seule syllabe / suite de caractères.
       if (!recherche.includes(" ")) {
-        const motTrouve = trouverMotSimple(recherche);
-
-        if (!motTrouve) {
-          afficherMessage("Aucun mot");
-          return;
-        }
-
-        afficherMotSimple(motTrouve, recherche);
-        return;
+        resultatsActuels = mots.filter(mot => mot.includes(recherche))
+          .map(mot => ({ mot }));
+      } else {
+        const morceaux = recherche.split(/\s+/).filter(Boolean);
+        resultatsActuels = mots.flatMap(mot => {
+          let positionRecherche = 0;
+          const positions = [];
+          for (const morceau of morceaux) {
+            const debut = mot.indexOf(morceau, positionRecherche);
+            if (debut === -1) return [];
+            positions.push({ debut, fin: debut + morceau.length });
+            positionRecherche = debut + morceau.length;
+          }
+          return [{ mot, positions }];
+        });
       }
-
-      // Plusieurs morceaux séparés par des espaces.
-      // Exemple : "ou er"
-      const morceaux = recherche
-        .split(/\s+/)
-        .filter(Boolean);
-
-      if (morceaux.length === 0) {
-        resultat.innerHTML = "";
-        return;
-      }
-
-      const resultatRecherche = trouverMotAvecMorceaux(morceaux);
-
-      if (!resultatRecherche) {
-        afficherMessage("Aucun mot");
-        return;
-      }
-
-      afficherMotAvecMorceaux(
-        resultatRecherche.mot,
-        resultatRecherche.positions
-      );
+      afficherResultatActuel();
     }
 
     input.addEventListener("input", chercherMot);
+
+    // Espace : passe au prochain mot sans modifier la recherche.
+    document.addEventListener("keydown", event => {
+      if (event.code !== "Space" || event.ctrlKey || event.altKey || event.metaKey) return;
+      event.preventDefault();
+      if (!resultatsActuels.length) return;
+      indexActuel = (indexActuel + 1) % resultatsActuels.length;
+      afficherResultatActuel();
+      input.focus();
+    });
 
     // Garde ton système :
     // - premier Backspace/Delete après 2 s = efface tout
@@ -397,6 +408,8 @@
 
         input.value = "";
         resultat.innerHTML = "";
+        resultatsActuels = [];
+        indexActuel = 0;
         input.focus();
       }
 
